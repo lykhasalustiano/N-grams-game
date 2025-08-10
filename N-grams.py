@@ -1,7 +1,7 @@
-import json
+import math
 import random
 import os
-from pathlib import Path
+from collections import defaultdict
 from time import sleep
 
 class Colors:
@@ -20,49 +20,127 @@ class NGramGame:
         self.user_answers = []
         self.correct_answers = []
         self.difficulty = "medium"
-        self.questions = self.load_questions()
         self.current_question_index = 0
         self.hints_remaining = 3
+        
+        self.corpus = [
+            "the quick brown fox jumps over the lazy dog",
+            "the quick brown bear sleeps",
+            "the brown fox eats apple",
+            "the quick break has jumped over the lazy edge",
+            "the quick break has dropped",
+            "the quick break has stopped"
+        ]
+        self.unigrams = defaultdict(int)
+        self.bigrams = defaultdict(int)
+        self.trigrams = defaultdict(int)
+        self.vocab = set()
+        self.build_ngram_models()
+        self.questions = self.generate_questions()
 
-    def load_questions(self):
-        questions = {
-            "easy": [
-                {"sentence": "I love an animal that", "length": 4, "options": ["goat", "bear", "lion", "wolf"], "hint": "Common pet or wild animal"},
-                {"sentence": "The color of sky is", "length": 4, "options": ["blue", "gray", "pink", "teal"], "hint": "Typically seen on clear days"},
-                {"sentence": "I drink a glass of", "length": 5, "options": ["water", "juice", "milk", "soda"], "hint": "Essential for life"},
-                {"sentence": "We sleep on a", "length": 3, "options": ["bed", "mat", "cot", "rug"], "hint": "Furniture for resting"},
-                {"sentence": "The sun is very", "length": 3, "options": ["hot", "big", "far", "red"], "hint": "Opposite of cold"},
-                {"sentence": "Apples are usually", "length": 3, "options": ["red", "sour", "soft", "tiny"], "hint": "Common color"},
-                {"sentence": "I write with a", "length": 3, "options": ["pen", "paw", "rod", "pin"], "hint": "Common writing tool"},
-                {"sentence": "Birds can", "length": 3, "options": ["fly", "run", "dig", "swim"], "hint": "What makes them special"},
-                {"sentence": "Winter is", "length": 4, "options": ["cold", "warm", "dark", "long"], "hint": "Opposite of summer"},
-                {"sentence": "My shoes are", "length": 3, "options": ["new", "old", "red", "big"], "hint": "Opposite of old"}
-            ],
-            "medium": [
-                {"sentence": "The weather today is", "length": 3, "options": ["hot", "wet", "dry", "sun"], "hint": "Describes temperature"},
-                {"sentence": "She works as a", "length": 6, "options": ["doctor", "nurse", "artist", "writer"], "hint": "Medical professional"},
-                {"sentence": "We traveled by", "length": 3, "options": ["car", "bus", "air", "sea"], "hint": "Common vehicle"},
-                {"sentence": "The movie was", "length": 4, "options": ["long", "boring", "funny", "scary"], "hint": "Duration description"},
-                {"sentence": "I need to buy", "length": 4, "options": ["milk", "bread", "eggs", "meat"], "hint": "Dairy product"},
-                {"sentence": "The book was", "length": 5, "options": ["great", "short", "bland", "thick"], "hint": "Positive adjective"},
-                {"sentence": "We played", "length": 6, "options": ["soccer", "tennis", "puzzle", "cards"], "hint": "Team sport"},
-                {"sentence": "The music is", "length": 4, "options": ["loud", "soft", "fast", "slow"], "hint": "Volume description"},
-                {"sentence": "My phone is", "length": 5, "options": ["black", "broken", "new", "small"], "hint": "Color option"},
-                {"sentence": "The cake tastes", "length": 5, "options": ["sweet", "salty", "bitter", "sour"], "hint": "Dessert characteristic"}
-            ],
-            "hard": [
-                {"sentence": "He studies quantum", "length": 8, "options": ["physics", "mechanics", "chemistry", "biology"], "hint": "Advanced physics"},
-                {"sentence": "The conference was about", "length": 11, "options": ["technology", "innovation", "marketing", "economics"], "hint": "Tech-related"},
-                {"sentence": "Her specialization is", "length": 9, "options": ["neurology", "cardiology", "pediatrics", "oncology"], "hint": "Medical field"},
-                {"sentence": "The novel explores", "length": 11, "options": ["existentialism", "romanticism", "modernism", "realism"], "hint": "Philosophical theme"},
-                {"sentence": "The algorithm uses", "length": 13, "options": ["machinelearning", "blockchain", "cryptography", "biometrics"], "hint": "AI technology"},
-                {"sentence": "The research focuses on", "length": 10, "options": ["genetics", "climate", "behavior", "disease"], "hint": "Biological science"},
-                {"sentence": "The artist works with", "length": 8, "options": ["acrylics", "watercolor", "charcoal", "pastels"], "hint": "Painting medium"},
-                {"sentence": "The expedition explored", "length": 9, "options": ["Antarctica", "Amazon", "Sahara", "Himalayas"], "hint": "Cold continent"},
-                {"sentence": "The orchestra played", "length": 7, "options": ["symphony", "concerto", "sonata", "opera"], "hint": "Musical composition"},
-                {"sentence": "The debate covered", "length": 11, "options": ["immigration", "healthcare", "education", "taxation"], "hint": "Political topic"}
-            ]
-        }
+    def build_ngram_models(self):
+        """Build n-gram counts from corpus (as shown in your images)"""
+        for sentence in self.corpus:
+            tokens = ['<s>'] + sentence.split() + ['</s>']
+          
+            self.vocab.update(tokens)
+            # Unigrams
+            for token in tokens:
+                self.unigrams[token] += 1
+            # Bigrams
+            for i in range(len(tokens)-1):
+                self.bigrams[(tokens[i], tokens[i+1])] += 1
+            # Trigrams
+            for i in range(len(tokens)-2):
+                self.trigrams[(tokens[i], tokens[i+1], tokens[i+2])] += 1
+
+    def calculate_probability(self, context, word):
+        """Calculate probability using Markov assumption and MLE (from your images)"""
+        if len(context) == 2:  # Trigram
+            count = self.trigrams.get((context[0], context[1], word), 0) + 1
+            denominator = self.bigrams.get((context[0], context[1]), 0) + len(self.vocab)
+            return count / denominator if denominator else 0
+        elif len(context) == 1:  # Bigram
+            count = self.bigrams.get((context[0], word), 0) + 1
+            denominator = self.unigrams.get(context[0], 0) + len(self.vocab)
+            return count / denominator if denominator else 0
+        else:  # Unigram
+            return (self.unigrams.get(word, 0) / sum(self.unigrams.values()))
+
+    def log_probability(self, context, word):
+        """Log probability to avoid underflow (as shown in your images)"""
+        prob = self.calculate_probability(context, word)
+        return math.log(prob) if prob > 0 else float('-inf')
+
+    def generate_questions(self):
+        """Generate questions based on actual n-gram probabilities"""
+        questions = {"easy": [], "medium": [], "hard": []}
+        vocab_list = list(self.vocab - {'<s>', '</s>'})
+        
+        for difficulty in questions:
+            for _ in range(10):
+                # Select random context from corpus
+                sentence = random.choice(self.corpus)
+                tokens = sentence.split()
+                if len(tokens) < 2:
+                    continue
+                
+                if difficulty == "easy":
+                    # Bigram questions
+                    context_pos = random.randint(0, len(tokens)-2)
+                    context = tokens[context_pos:context_pos+1]
+                    correct_next = tokens[context_pos+1]
+                    ngram_type = "bigram"
+                elif difficulty == "medium":
+                    # Trigram questions
+                    context_pos = random.randint(0, len(tokens)-3)
+                    context = tokens[context_pos:context_pos+2]
+                    correct_next = tokens[context_pos+2]
+                    ngram_type = "trigram"
+                else:  # hard
+                    # Mixed with log probabilities
+                    if random.random() > 0.5:
+                        context_pos = random.randint(0, len(tokens)-2)
+                        context = tokens[context_pos:context_pos+1]
+                        correct_next = tokens[context_pos+1]
+                        ngram_type = "bigram (log)"
+                    else:
+                        context_pos = random.randint(0, len(tokens)-3)
+                        context = tokens[context_pos:context_pos+2]
+                        correct_next = tokens[context_pos+2]
+                        ngram_type = "trigram (log)"
+                
+                # Get probable options
+                options = [correct_next]
+                probs = {}
+                for word in vocab_list:
+                    if word not in context and word != correct_next:
+                        if "log" in ngram_type:
+                            probs[word] = self.log_probability(context, word)
+                        else:
+                            probs[word] = self.calculate_probability(context, word)
+                
+                # Add top 3 probable alternatives
+                top_words = sorted(probs.items(), key=lambda x: -x[1])[:3]
+                options.extend([w for w, _ in top_words])
+                
+                # Ensure we have 4 options
+                while len(options) < 4 and len(vocab_list) > len(options):
+                    word = random.choice(vocab_list)
+                    if word not in options and word not in context:
+                        options.append(word)
+                
+                random.shuffle(options)
+                
+                questions[difficulty].append({
+                    "sentence": " ".join(context),
+                    "length": len(correct_next),
+                    "options": options,
+                    "hint": f"{ngram_type} from: '{sentence}'",
+                    "correct": correct_next,
+                    "context": context,
+                    "ngram_type": ngram_type
+                })
         return questions
 
     def clear_screen(self):
@@ -73,6 +151,10 @@ class NGramGame:
         print(f"{Colors.CYAN}{Colors.BOLD}N-GRAM WORD PREDICTION GAME{Colors.RESET}")
         print(f"{Colors.YELLOW}Difficulty: {self.difficulty.capitalize()}{Colors.RESET}")
         print(f"{Colors.BLUE}Score: {self.score}/10 | Hints: {self.hints_remaining}{Colors.RESET}\n")
+        print(f"{Colors.BOLD}Current Corpus:{Colors.RESET}")
+        for i, sent in enumerate(self.corpus[:3], 1):
+            print(f"{i}. {sent}")
+        print()
 
     def play_game(self):
         self.print_header()
@@ -83,10 +165,13 @@ class NGramGame:
             self.print_question(question, i)
             
             while True:
-                user_input = input(f"{Colors.GREEN}Your answer (or 'hint'): {Colors.RESET}").strip().lower()
+                user_input = input(f"{Colors.GREEN}Your answer (or 'hint'/'theory'): {Colors.RESET}").strip().lower()
                 
                 if user_input == "hint":
                     self.use_hint(question)
+                    continue
+                elif user_input == "theory":
+                    self.explain_theory(question)
                     continue
                     
                 if self.check_answer(user_input, question):
@@ -97,8 +182,10 @@ class NGramGame:
     def print_question(self, question, q_num):
         self.print_header()
         print(f"{Colors.BOLD}Question {q_num}:{Colors.RESET}")
-        print(f"{question['sentence']} {'[_]' * question['length']}\n")
+        print(f"Given the context: {Colors.CYAN}'{question['sentence']}'{Colors.RESET}")
+        print(f"Predict the next word (length: {question['length']} letters)\n")
         print(f"Options: {', '.join(question['options'])}")
+        print(f"\n{Colors.YELLOW}Type 'theory' to see NLP concepts for this question{Colors.RESET}")
 
     def use_hint(self, question):
         if self.hints_remaining > 0:
@@ -107,23 +194,42 @@ class NGramGame:
         else:
             print(f"\n{Colors.RED}No hints remaining!{Colors.RESET}\n")
 
+    def explain_theory(self, question):
+        print(f"\n{Colors.BOLD}Relevant NLP Concepts:{Colors.RESET}")
+        print(f"- {Colors.YELLOW}Markov Assumption:{Colors.RESET} Probability depends only on previous {'1' if len(question['context'])==1 else '2'} word(s)")
+        
+        if "log" in question['ngram_type']:
+            print(f"- {Colors.YELLOW}Log Probabilities:{Colors.RESET} Used to avoid underflow in multiplication")
+            print(f"  Original: {question['context']} → {question['correct']}")
+            print(f"  Calculation: log(p) = {self.log_probability(question['context'], question['correct']):.2f}")
+        else:
+            print(f"- {Colors.YELLOW}Maximum Likelihood Estimation:{Colors.RESET}")
+            print(f"  P({question['correct']}|{','.join(question['context'])}) = {self.calculate_probability(question['context'], question['correct']):.2f}")
+        
+        print(f"- {Colors.YELLOW}N-gram Type:{Colors.RESET} {question['ngram_type'].upper()}")
+        input("\nPress Enter to continue...")
+        self.print_question(question, self.current_question_index+1)
+
     def check_answer(self, user_input, question):
         options = [opt.lower() for opt in question['options']]
         if user_input in options:
-            correct_answer = random.choice(question['options'])
+            correct_answer = question['correct']
             self.correct_answers.append(correct_answer)
             self.user_answers.append(user_input)
             
             if user_input == correct_answer.lower():
                 self.score += 1
                 print(f"\n{Colors.GREEN}Correct!{Colors.RESET}")
+                prob = (self.log_probability if "log" in question['ngram_type'] else self.calculate_probability)(question['context'], correct_answer)
+                print(f"Probability: {prob:.4f}{' (log)' if 'log' in question['ngram_type'] else ''}")
             else:
-                print(f"\n{Colors.RED}Incorrect!{Colors.RESET}")
+                print(f"\n{Colors.RED}Incorrect!{Colors.RESET} Correct was '{correct_answer}'")
+                print(f"Your answer '{user_input}' probability: {self.calculate_probability(question['context'], user_input):.4f}")
             
             input("\nPress Enter to continue...")
             return True
         else:
-            print(f"{Colors.RED}Invalid choice. Please select from the given options.{Colors.RESET}")
+            print(f"{Colors.RED}Invalid choice. Please select from: {', '.join(question['options'])}{Colors.RESET}")
             return False
 
     def show_answer_sheet(self):
@@ -135,21 +241,22 @@ class NGramGame:
         for i in range(10):
             q = questions[i]
             user_answer = self.user_answers[i]
-            correct_answer = self.correct_answers[i]
+            correct_answer = q['correct']
             
-            print(f"{Colors.BOLD}Q{i+1}: {q['sentence']} {correct_answer}{Colors.RESET}")
+            print(f"{Colors.BOLD}Q{i+1}: After '{q['sentence']}', the correct word is: {correct_answer}{Colors.RESET}")
             print(f"Your answer: {Colors.GREEN if user_answer == correct_answer.lower() else Colors.RED}{user_answer}{Colors.RESET}")
+            print(f"Probability: {self.calculate_probability(q['context'], correct_answer):.4f} ({q['ngram_type']})")
             print(f"Options: {', '.join(q['options'])}")
-            print("-" * 50)
+            print("-" * 60)
         
         input("\nPress Enter to return to main menu...")
 
     def set_difficulty(self):
         self.clear_screen()
         print(f"{Colors.BOLD}SELECT DIFFICULTY{Colors.RESET}\n")
-        print("1. Easy")
-        print("2. Medium")
-        print("3. Hard")
+        print("1. Easy (Bigrams)")
+        print("2. Medium (Trigrams)")
+        print("3. Hard (Mixed with Log Probabilities)")
         
         while True:
             choice = input("\nEnter your choice (1-3): ")
@@ -171,9 +278,10 @@ class NGramGame:
             print(f"{Colors.CYAN}{Colors.BOLD}MAIN MENU{Colors.RESET}\n")
             print("1. Start Game")
             print("2. Change Difficulty")
-            print("3. Exit")
+            print("3. View Corpus")
+            print("4. Exit")
             
-            choice = input("\nEnter your choice (1-3): ")
+            choice = input("\nEnter your choice (1-4): ")
             
             if choice == "1":
                 self.score = 0
@@ -184,11 +292,21 @@ class NGramGame:
             elif choice == "2":
                 self.set_difficulty()
             elif choice == "3":
+                self.view_corpus()
+            elif choice == "4":
                 print(f"\n{Colors.YELLOW}Thanks for playing!{Colors.RESET}")
                 break
             else:
                 print(f"{Colors.RED}Invalid choice. Please try again.{Colors.RESET}")
                 sleep(1)
+
+    def view_corpus(self):
+        self.clear_screen()
+        print(f"{Colors.BOLD}{Colors.UNDERLINE}CURRENT CORPUS{Colors.RESET}\n")
+        for i, sentence in enumerate(self.corpus, 1):
+            print(f"{i}. {sentence}")
+        print(f"\n{Colors.YELLOW}Vocabulary size: {len(self.vocab)}{Colors.RESET}")
+        input("\nPress Enter to return to main menu...")
 
 if __name__ == "__main__":
     game = NGramGame()
